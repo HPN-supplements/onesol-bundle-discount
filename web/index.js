@@ -102,7 +102,10 @@ app.get('/auth/callback', async (req, res) => {
     // Redirect to discount list in admin
     res.redirect(`https://${session.shop}/admin/discounts`);
   } catch (err) {
-    console.error('[callback] Error:', err);
+    console.error('[callback] Error:', err.message);
+    console.error('[callback] Stack:', err.stack);
+    if (err.response) console.error('[callback] Response:', JSON.stringify(err.response));
+    res.status(500).send('<pre>OAuth callback error:\n' + err.stack + '</pre>');
     res.status(500).send('OAuth callback error: ' + err.message);
   }
 });
