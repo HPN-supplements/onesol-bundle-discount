@@ -53,8 +53,8 @@ app.get('/auth/callback', async (req, res) => {
     const computedHmac = crypto.createHmac('sha256', API_SECRET).update(entries.join('&')).digest('hex');
     console.log('[callback] HMAC ok:', computedHmac === hmac);
 
-    // 3. Exchange code for access token
-    console.log('[callback] Exchanging code for token...');
+    // Exchange code for access token
+    console.log('[callback] Exchanging code for token, redirect_uri:', REDIRECT_URI);
     const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -62,6 +62,7 @@ app.get('/auth/callback', async (req, res) => {
         client_id: API_KEY,
         client_secret: API_SECRET,
         code,
+        redirect_uri: REDIRECT_URI,
       }),
     });
 
