@@ -1,0 +1,14 @@
+{
+  "name": "hpn-bundle-discount-web",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@shopify/shopify-api": "^11.0.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0"
+  }
+}

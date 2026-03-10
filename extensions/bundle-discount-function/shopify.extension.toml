@@ -1,0 +1,21 @@
+api_version = "2026-01"
+
+[[extensions]]
+name        = "HPN Bundle Discount Function"
+handle      = "hpn-bundle-discount"
+
+uid = "b923a5a7-93f4-16c6-6666-7eab7fb0af49a0331be1"
+
+type        = "function"
+description = "Applies tiered percentage discounts only to cart lines that were added via the Bundle Builder (identified by the _bundle_item line_item property). Non-bundle items in the same cart are never touched."
+
+# ── Run target: cart lines ────────────────────────────────────────────────────
+[[extensions.targeting]]
+target      = "cart.lines.discounts.generate.run"
+input_query = "src/run.graphql"
+export      = "run"
+
+# ── Build: Shopify CLI auto-detects src/index.js and compiles via javy ───────
+[extensions.build]
+command = ""
+path    = "dist/function.wasm"

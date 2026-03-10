@@ -1,0 +1,31 @@
+{
+  "name": "bundle-discount-function",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "shopify": "npm exec -- shopify",
+    "build": "npm exec -- shopify app function build",
+    "preview": "npm exec -- shopify app function run"
+  },
+  "codegen": {
+    "schema": "schema.graphql",
+    "documents": "src/*.graphql",
+    "generates": {
+      "./generated/api.js": {
+        "plugins": [
+          "typescript",
+          "typescript-operations"
+        ]
+      }
+    },
+    "config": {
+      "omitOperationSuffix": true
+    }
+  },
+  "devDependencies": {
+    "vitest": "^0.29.8"
+  },
+  "dependencies": {
+    "@shopify/shopify_function": "~1.0.0"
+  }
+}
