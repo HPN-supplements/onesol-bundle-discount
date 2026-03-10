@@ -90,8 +90,12 @@ app.get('/auth/callback', async (req, res) => {
       }),
     });
 
-    const tokenData = await tokenRes.json();
-    console.log('[callback] Token response status:', tokenRes.status);
+    const rawBody = await tokenRes.text();
+    console.log('[callback] Token response status:', tokenRes.status, '| body:', rawBody.slice(0, 300));
+
+    let tokenData;
+    try { tokenData = JSON.parse(rawBody); }
+    catch { return res.status(500).send('Token exchange failed (non-JSON response): ' + rawBody.slice(0, 500)); }
 
     if (!tokenData.access_token) {
       return res.status(500).send('Failed to get access token: ' + JSON.stringify(tokenData));
