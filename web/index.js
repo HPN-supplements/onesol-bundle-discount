@@ -6,13 +6,15 @@ import '@shopify/shopify-api/adapters/node';
 const app = express();
 app.use(express.json());
 
+const HOST = process.env.HOST;
+
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET,
   scopes: ['write_discounts', 'read_discounts'],
-  hostName: process.env.HOST.replace(/https?:\/\//, ''),
+  hostName: HOST.replace(/https?:\/\//, ''),
   apiVersion: ApiVersion.January26,
-  isEmbeddedApp: true,
+  isEmbeddedApp: false,
 });
 
 // ── OAuth start ───────────────────────────────────────────────────────────────
@@ -40,12 +42,13 @@ app.get('/auth/callback', async (req, res) => {
   res.redirect(`https://${session.shop}/admin/discounts`);
 });
 
-// ── App home — shown when merchant opens the app ──────────────────────────────
+// ── App home — redirect to OAuth if shop param present ───────────────────────
 app.get('/', async (req, res) => {
   const shop = req.query.shop;
-  if (!shop) return res.send(homePage('Unknown', 'unknown'));
-
-  res.send(homePage(shop, 'ACTIVE'));
+  if (shop) {
+    return res.redirect(`/auth?shop=${shop}`);
+  }
+  res.send('<h2>HPN Bundle Discount — provide ?shop=yourstore.myshopify.com to install</h2>');
 });
 
 // ── Create the automatic discount via Admin API ───────────────────────────────
