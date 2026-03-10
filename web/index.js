@@ -23,15 +23,21 @@ function saveSessions(sessions) {
 const fileSessionStorage = {
   async storeSession(session) {
     const sessions = loadSessions();
-    sessions[session.id] = session.toObject();
+    sessions[session.id] = JSON.parse(JSON.stringify(session));
     saveSessions(sessions);
+    console.log('[session] Stored session:', session.id);
     return true;
   },
   async loadSession(id) {
     const sessions = loadSessions();
     const data = sessions[id];
-    if (!data) return undefined;
-    return Session.fromPropertyArray(Object.entries(data));
+    if (!data) {
+      console.log('[session] Session NOT found:', id, '| keys:', Object.keys(sessions));
+      return undefined;
+    }
+    console.log('[session] Loaded session:', id);
+    const s = new Session(data);
+    return s;
   },
   async deleteSession(id) {
     const sessions = loadSessions();
@@ -49,7 +55,7 @@ const fileSessionStorage = {
     const sessions = loadSessions();
     return Object.values(sessions)
       .filter((s) => s.shop === shop)
-      .map((s) => Session.fromPropertyArray(Object.entries(s)));
+      .map((s) => new Session(s));
   },
 };
 
