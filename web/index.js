@@ -206,4 +206,17 @@ function homePage(shop, status) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+
+  // Keep-alive: ping self every 14 min so Render free tier never sleeps
+  const PING_URL = HOST.startsWith('http') ? HOST : `https://${HOST}`;
+  setInterval(() => {
+    fetch(PING_URL + '/health')
+      .then(() => console.log('[keep-alive] ping ok'))
+      .catch((e) => console.warn('[keep-alive] ping failed:', e.message));
+  }, 14 * 60 * 1000);
+});
+
+// ── Health check endpoint ─────────────────────────────────────────────────────
+app.get('/health', (_req, res) => res.send('ok'));
