@@ -2,11 +2,56 @@ import 'dotenv/config';
 import express from 'express';
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 app.use(express.json());
 
-const HOST = process.env.HOST;
+const HOST = (process.env.HOST || 'https://hpn-bundle-discount.onrender.com').replace(/\/$/, '');
+
+// ── File-based session storage (survives restarts) ────────────────────────────
+const SESSION_FILE = path.join('/tmp', 'shopify-sessions.json');
+
+function loadSessions() {
+  try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')); } catch { return {}; }
+}
+function saveSessions(sessions) {
+  fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions), 'utf8');
+}
+
+const fileSessionStorage = {
+  async storeSession(session) {
+    const sessions = loadSessions();
+    sessions[session.id] = session.toObject();
+    saveSessions(sessions);
+    return true;
+  },
+  async loadSession(id) {
+    const sessions = loadSessions();
+    const data = sessions[id];
+    if (!data) return undefined;
+    return Session.fromPropertyArray(Object.entries(data));
+  },
+  async deleteSession(id) {
+    const sessions = loadSessions();
+    delete sessions[id];
+    saveSessions(sessions);
+    return true;
+  },
+  async deleteSessions(ids) {
+    const sessions = loadSessions();
+    ids.forEach((id) => delete sessions[id]);
+    saveSessions(sessions);
+    return true;
+  },
+  async findSessionsByShop(shop) {
+    const sessions = loadSessions();
+    return Object.values(sessions)
+      .filter((s) => s.shop === shop)
+      .map((s) => Session.fromPropertyArray(Object.entries(s)));
+  },
+};
 
 const shopify = shopifyApi({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -15,6 +60,7 @@ const shopify = shopifyApi({
   hostName: HOST.replace(/https?:\/\//, ''),
   apiVersion: ApiVersion.January26,
   isEmbeddedApp: false,
+  sessionStorage: fileSessionStorage,
 });
 
 // ── OAuth start ───────────────────────────────────────────────────────────────
