@@ -1,176 +1,198 @@
 import 'dotenv/config';
 import express from 'express';
-import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
-import '@shopify/shopify-api/adapters/node';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
 const app = express();
 app.use(express.json());
 
+const API_KEY = process.env.SHOPIFY_API_KEY;
+const API_SECRET = process.env.SHOPIFY_API_SECRET;
+const SCOPES = 'write_discounts,read_discounts';
 const HOST = (process.env.HOST || 'https://hpn-bundle-discount.onrender.com').replace(/\/$/, '');
+const FULL_HOST = HOST.startsWith('http') ? HOST : `https://${HOST}`;
+const REDIRECT_URI = `${FULL_HOST}/auth/callback`;
 
-// ── File-based session storage (survives restarts) ────────────────────────────
-const SESSION_FILE = path.join('/tmp', 'shopify-sessions.json');
+// ── File-based nonce + token storage ──────────────────────────────────────────
+const STATE_FILE = path.join('/tmp', 'oauth-state.json');
+const TOKEN_FILE = path.join('/tmp', 'shopify-tokens.json');
 
-function loadSessions() {
-  try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')); } catch { return {}; }
+function loadJSON(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
 }
-function saveSessions(sessions) {
-  fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions), 'utf8');
+function saveJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data), 'utf8');
 }
 
-const fileSessionStorage = {
-  async storeSession(session) {
-    const sessions = loadSessions();
-    sessions[session.id] = JSON.parse(JSON.stringify(session));
-    saveSessions(sessions);
-    console.log('[session] Stored session:', session.id);
-    return true;
-  },
-  async loadSession(id) {
-    const sessions = loadSessions();
-    const data = sessions[id];
-    if (!data) {
-      console.log('[session] Session NOT found:', id, '| keys:', Object.keys(sessions));
-      return undefined;
-    }
-    console.log('[session] Loaded session:', id);
-    const s = new Session(data);
-    return s;
-  },
-  async deleteSession(id) {
-    const sessions = loadSessions();
-    delete sessions[id];
-    saveSessions(sessions);
-    return true;
-  },
-  async deleteSessions(ids) {
-    const sessions = loadSessions();
-    ids.forEach((id) => delete sessions[id]);
-    saveSessions(sessions);
-    return true;
-  },
-  async findSessionsByShop(shop) {
-    const sessions = loadSessions();
-    return Object.values(sessions)
-      .filter((s) => s.shop === shop)
-      .map((s) => new Session(s));
-  },
-};
+// ── OAuth start (manual — no cookies needed) ──────────────────────────────────
+app.get('/auth', (req, res) => {
+  const shop = req.query.shop;
+  if (!shop) return res.status(400).send('Missing ?shop=');
 
-const shopify = shopifyApi({
-  apiKey: process.env.SHOPIFY_API_KEY,
-  apiSecretKey: process.env.SHOPIFY_API_SECRET,
-  scopes: ['write_discounts', 'read_discounts'],
-  hostName: HOST.replace(/https?:\/\//, ''),
-  apiVersion: ApiVersion.January26,
-  isEmbeddedApp: false,
-  sessionStorage: fileSessionStorage,
+  const nonce = crypto.randomBytes(16).toString('hex');
+
+  // Save nonce to file so callback can verify it
+  const states = loadJSON(STATE_FILE);
+  states[nonce] = { shop, createdAt: Date.now() };
+  saveJSON(STATE_FILE, states);
+
+  console.log(`[auth] Starting OAuth for ${shop}, nonce=${nonce}`);
+
+  const authUrl = `https://${shop}/admin/oauth/authorize?` +
+    `client_id=${API_KEY}` +
+    `&scope=${SCOPES}` +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+    `&state=${nonce}` +
+    `&grant_options[]=`;
+
+  res.redirect(authUrl);
 });
 
-// ── OAuth start ───────────────────────────────────────────────────────────────
-app.get('/auth', async (req, res) => {
-  try {
-    console.log('[auth] Starting OAuth for shop:', req.query.shop);
-    await shopify.auth.begin({
-      shop: shopify.utils.sanitizeShop(req.query.shop, true),
-      callbackPath: '/auth/callback',
-      isOnline: false,
-      rawRequest: req,
-      rawResponse: res,
-    });
-  } catch (err) {
-    console.error('[auth] Error:', err);
-    res.status(500).send('OAuth start error: ' + err.message);
-  }
-});
-
-// ── OAuth callback — installs app and creates discount ────────────────────────
+// ── OAuth callback (manual — exchanges code for token) ────────────────────────
 app.get('/auth/callback', async (req, res) => {
   try {
-    console.log('[callback] Received callback, query:', JSON.stringify(req.query));
-    const callback = await shopify.auth.callback({
-      rawRequest: req,
-      rawResponse: res,
+    const { code, shop, state, hmac } = req.query;
+    console.log(`[callback] shop=${shop} state=${state} code=${code?.slice(0, 8)}...`);
+
+    // 1. Verify state nonce
+    const states = loadJSON(STATE_FILE);
+    if (!states[state]) {
+      console.error('[callback] Invalid state nonce:', state, '| known:', Object.keys(states));
+      return res.status(403).send('Invalid state parameter. <a href="/auth?shop=' + shop + '">Retry</a>');
+    }
+    delete states[state];
+    saveJSON(STATE_FILE, states);
+
+    // 2. Verify HMAC
+    const params = { ...req.query };
+    delete params.hmac;
+    const sortedParams = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
+    const computedHmac = crypto.createHmac('sha256', API_SECRET).update(sortedParams).digest('hex');
+
+    if (computedHmac !== hmac) {
+      console.error('[callback] HMAC mismatch');
+      return res.status(403).send('HMAC verification failed');
+    }
+
+    // 3. Exchange code for access token
+    console.log('[callback] Exchanging code for token...');
+    const tokenRes = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: API_KEY,
+        client_secret: API_SECRET,
+        code,
+      }),
     });
 
-    const session = callback.session;
-    console.log('[callback] OAuth complete for:', session.shop);
-    await createBundleDiscount(session);
+    const tokenData = await tokenRes.json();
+    console.log('[callback] Token response status:', tokenRes.status);
 
-    // Redirect to discount list in admin
-    res.redirect(`https://${session.shop}/admin/discounts`);
+    if (!tokenData.access_token) {
+      return res.status(500).send('Failed to get access token: ' + JSON.stringify(tokenData));
+    }
+
+    // 4. Save token
+    const tokens = loadJSON(TOKEN_FILE);
+    tokens[shop] = { accessToken: tokenData.access_token, scope: tokenData.scope, createdAt: Date.now() };
+    saveJSON(TOKEN_FILE, tokens);
+
+    console.log(`[callback] ✅ Got token for ${shop}`);
+
+    // 5. Create the discount
+    await createBundleDiscount(shop, tokenData.access_token);
+
+    res.redirect(`https://admin.shopify.com/store/${shop.replace('.myshopify.com', '')}/discounts`);
   } catch (err) {
     console.error('[callback] Error:', err.message);
     console.error('[callback] Stack:', err.stack);
-    if (err.response) console.error('[callback] Response:', JSON.stringify(err.response));
     res.status(500).send('<pre>OAuth callback error:\n' + err.stack + '</pre>');
-    res.status(500).send('OAuth callback error: ' + err.message);
   }
 });
 
-// ── App home — redirect to OAuth if shop param present ───────────────────────
-app.get('/', async (req, res) => {
+// ── App home ──────────────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
   const shop = req.query.shop;
-  if (shop) {
-    return res.redirect(`/auth?shop=${shop}`);
-  }
-  res.send('<h2>HPN Bundle Discount — provide ?shop=yourstore.myshopify.com to install</h2>');
+  if (shop) return res.redirect(`/auth?shop=${shop}`);
+  res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>HPN Bundle Discount</title>
+<style>body{font-family:-apple-system,sans-serif;max-width:600px;margin:80px auto;padding:0 20px}h1{font-size:24px}p{color:#666}</style>
+</head><body>
+<h1>🎁 HPN Bundle Discount</h1>
+<p>This app automatically applies tiered discounts to bundle builder items.</p>
+<p>To install, go to: <code>/auth?shop=yourstore.myshopify.com</code></p>
+</body></html>`);
 });
+
+// ── Health ─────────────────────────────────────────────────────────────────────
+app.get('/health', (_req, res) => res.send('ok'));
 
 // ── Create the automatic discount via Admin API ───────────────────────────────
-async function createBundleDiscount(session) {
-  const client = new shopify.clients.Graphql({ session });
+async function createBundleDiscount(shop, accessToken) {
+  const gql = (query, variables) =>
+    fetch(`https://${shop}/admin/api/2026-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+      body: JSON.stringify({ query, variables }),
+    }).then((r) => r.json());
 
   // 1. Find the function ID
-  const { data: fnData } = await client.request(`
+  console.log('[discount] Looking for bundle function...');
+  const fnResult = await gql(`
     query {
-      shopifyFunctions(first: 20) {
+      shopifyFunctions(first: 25) {
         nodes { id title app { title } }
       }
     }
   `);
 
-  const fn = fnData.shopifyFunctions.nodes.find(
+  console.log('[discount] Functions:', JSON.stringify(
+    fnResult.data?.shopifyFunctions?.nodes?.map(f => ({ id: f.id, title: f.title, app: f.app?.title }))
+  ));
+
+  const fn = fnResult.data?.shopifyFunctions?.nodes?.find(
     (f) =>
       f.app?.title?.toLowerCase().includes('bundle') ||
       f.title?.toLowerCase().includes('bundle')
   );
 
   if (!fn) {
-    console.error('Bundle function not found on store:', session.shop);
+    console.error('[discount] ❌ Bundle function not found on store:', shop);
     return;
   }
+  console.log('[discount] Found function:', fn.id, fn.title);
 
   // 2. Check if discount already exists
-  const { data: existingData } = await client.request(`
+  const existingResult = await gql(`
     query {
       automaticDiscountNodes(first: 50) {
         nodes {
           id
           automaticDiscount {
-            ... on DiscountAutomaticApp {
-              title
-              status
-            }
+            ... on DiscountAutomaticApp { title status }
           }
         }
       }
     }
   `);
 
-  const exists = existingData.automaticDiscountNodes.nodes.some(
+  const exists = existingResult.data?.automaticDiscountNodes?.nodes?.some(
     (n) => n.automaticDiscount?.title === 'Bundle Builder Discount'
   );
 
   if (exists) {
-    console.log('Discount already exists on', session.shop);
+    console.log('[discount] Discount already exists on', shop);
     return;
   }
 
   // 3. Create the discount
-  const { data, errors } = await client.request(`
+  console.log('[discount] Creating discount with functionId:', fn.id);
+  const createResult = await gql(`
     mutation discountAutomaticAppCreate($input: DiscountAutomaticAppInput!) {
       discountAutomaticAppCreate(automaticAppDiscount: $input) {
         automaticAppDiscount { discountId title status }
@@ -178,67 +200,39 @@ async function createBundleDiscount(session) {
       }
     }
   `, {
-    variables: {
-      input: {
-        title: 'Bundle Builder Discount',
-        functionId: fn.id,
-        startsAt: new Date().toISOString(),
-        combinesWith: {
-          orderDiscounts: false,
-          productDiscounts: false,
-          shippingDiscounts: false,
-        },
+    input: {
+      title: 'Bundle Builder Discount',
+      functionId: fn.id,
+      startsAt: new Date().toISOString(),
+      combinesWith: {
+        orderDiscounts: false,
+        productDiscounts: false,
+        shippingDiscounts: false,
       },
     },
   });
 
-  if (errors || data.discountAutomaticAppCreate.userErrors.length > 0) {
-    console.error('Error creating discount:', errors || data.discountAutomaticAppCreate.userErrors);
+  console.log('[discount] Result:', JSON.stringify(createResult));
+
+  const userErrors = createResult.data?.discountAutomaticAppCreate?.userErrors;
+  if (createResult.errors || (userErrors && userErrors.length > 0)) {
+    console.error('[discount] ❌ Error:', JSON.stringify(createResult.errors || userErrors));
     return;
   }
 
-  const d = data.discountAutomaticAppCreate.automaticAppDiscount;
-  console.log(`✅ Discount created on ${session.shop}: ${d.title} (${d.status})`);
+  const d = createResult.data.discountAutomaticAppCreate.automaticAppDiscount;
+  console.log(`[discount] ✅ Created on ${shop}: ${d.title} (${d.status})`);
 }
 
-// ── Simple HTML page ──────────────────────────────────────────────────────────
-function homePage(shop, status) {
-  const isActive = status === 'ACTIVE';
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>HPN Bundle Discount</title>
-  <style>
-    body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 80px auto; padding: 0 20px; }
-    .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: 600; }
-    .active { background: #d4edda; color: #155724; }
-    .inactive { background: #f8d7da; color: #721c24; }
-    h1 { font-size: 24px; }
-    p { color: #666; }
-  </style>
-</head>
-<body>
-  <h1>🎁 HPN Bundle Discount</h1>
-  <p>Store: <strong>${shop}</strong></p>
-  <p>Status: <span class="badge ${isActive ? 'active' : 'inactive'}">${isActive ? '✅ Active' : '⚠️ Setting up...'}</span></p>
-  <p>This app automatically applies tiered discounts (20%, 25%, 30%) to bundle builder items at checkout. Non-bundle items are never affected.</p>
-</body>
-</html>`;
-}
-
+// ── Start server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
-  // Keep-alive: ping self every 14 min so Render free tier never sleeps
-  const PING_URL = HOST.startsWith('http') ? HOST : `https://${HOST}`;
+  // Keep-alive: ping every 14 min so Render free tier never sleeps
   setInterval(() => {
-    fetch(PING_URL + '/health')
+    fetch(`${FULL_HOST}/health`)
       .then(() => console.log('[keep-alive] ping ok'))
       .catch((e) => console.warn('[keep-alive] ping failed:', e.message));
   }, 14 * 60 * 1000);
 });
-
-// ── Health check endpoint ─────────────────────────────────────────────────────
-app.get('/health', (_req, res) => res.send('ok'));
