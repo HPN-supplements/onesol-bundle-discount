@@ -1,90 +1,64 @@
-// =============================================================================
-// HPN Bundle Discount Function — run.js
-//
-// This Shopify Function runs at checkout for every cart that has this
-// automatic discount active. It:
-//
-//   1. Reads every cart line's attributes (= Shopify line_item.properties).
-//   2. Finds lines where  _bundle_item === "true".
-//   3. Reads the discount % from  _bundle_discount_pct  (set by bundle-builder-page.js).
-//   4. Returns a productDiscountsAdd operation that targets ONLY those lines.
-//
-// Lines WITHOUT _bundle_item are completely ignored — no discount applied.
-// This is the key safety guarantee: non-bundle items are never touched.
-//
-// The function export name ("run") must match the `export` field in
-// shopify.extension.toml → [[extensions.targeting]].
-// =============================================================================
-
-/**
- * @param {import("../generated/api").RunInput} input
- * @returns {import("../generated/api").FunctionRunResult}
- */
 export function run(input) {
-  // Guard: only act when this discount is configured as a PRODUCT discount.
+  const lines = input.cart?.lines ?? [];
   const discountClasses = input.discount?.discountClasses ?? [];
-  const isProductDiscount = discountClasses.includes('PRODUCT');
 
-  if (!isProductDiscount) {
+  if (!discountClasses.includes('PRODUCT')) {
     return { operations: [] };
   }
 
-  const lines = input.cart?.lines ?? [];
-
-  // ── Collect bundle lines, grouped by discount percentage ──────────────────
-  // Structure: { "20": [lineId, lineId, ...], "25": [...], "30": [...] }
-  const buckets = {};
+  // Group bundle lines by their bundle ID
+  const bundleGroups = new Map();
 
   for (const line of lines) {
-    const attrs = line.attribute ?? [];
+    const isBundleItem = line.bundleItem?.value === 'true';
+    const bundleId = line.bundleId?.value;
 
-    // Check _bundle_item === "true"
-    const isBundleItem = attrs.some(
-      (a) => a.key === '_bundle_item' && a.value === 'true'
-    );
+    if (!isBundleItem || !bundleId) continue;
 
-    if (!isBundleItem) continue; // skip — not a bundle item
+    if (!bundleGroups.has(bundleId)) {
+      bundleGroups.set(bundleId, { lines: [], totalQty: 0 });
+    }
 
-    // Read the percentage from _bundle_discount_pct
-    const pctAttr = attrs.find((a) => a.key === '_bundle_discount_pct');
-    const pct = pctAttr ? parseInt(pctAttr.value, 10) : 0;
-
-    if (!pct || pct <= 0 || pct > 100) continue; // skip — invalid or zero %
-
-    const key = String(pct);
-    if (!buckets[key]) buckets[key] = [];
-    buckets[key].push(line.id);
+    const group = bundleGroups.get(bundleId);
+    group.lines.push(line);
+    group.totalQty += line.quantity ?? 1;
   }
 
-  // ── Build one productDiscountsAdd operation per distinct percentage ────────
-  // Each operation applies a separate % to its specific set of lines.
-  const operations = [];
+  // Build discount candidates per bundle group
+  const candidates = [];
 
-  for (const [pctStr, lineIds] of Object.entries(buckets)) {
-    const percentage = parseFloat(pctStr);
+  for (const [, group] of bundleGroups) {
+    const pct = resolveTier(group.totalQty);
+    if (pct <= 0) continue;
 
-    operations.push({
-      productDiscountsAdd: {
-        selectionStrategy: 'ALL', // apply to ALL matched lines
-        candidates: lineIds.map((lineId) => ({
-          targets: [
-            {
-              cartLine: {
-                id: lineId,
-              },
-            },
-          ],
-          value: {
-            percentage: {
-              value: percentage,
-            },
-          },
-          message: `Bundle ${pctStr}% off`,
-        })),
+    for (const line of group.lines) {
+      candidates.push({
+        message: 'Bundle ' + pct + '% off',
+        targets: [{ cartLine: { id: line.id } }],
+        value: { percentage: { value: pct } },
+      });
+    }
+  }
+
+  if (!candidates.length) {
+    return { operations: [] };
+  }
+
+  return {
+    operations: [
+      {
+        productDiscountsAdd: {
+          selectionStrategy: 'ALL',
+          candidates: candidates,
+        },
       },
-    });
-  }
+    ],
+  };
+}
 
-  // Return empty operations if nothing matched (safe no-op)
-  return { operations };
+function resolveTier(totalQty) {
+  if (totalQty >= 4) return 30;
+  if (totalQty >= 3) return 25;
+  if (totalQty >= 2) return 20;
+  return 0;
 }

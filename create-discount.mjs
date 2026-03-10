@@ -1,57 +1,73 @@
 /**
- * One-time script to create the Bundle Builder automatic discount
- * in hpnsupplements.myshopify.com
+ * Creates the Automatic Discount that activates the Bundle Discount Function.
+ * Run once: node create-discount.mjs
  *
- * Usage:
- *   node create-discount.mjs <ADMIN_API_ACCESS_TOKEN>
- *
- * Get the token from:
- *   Partners Dashboard → bundle-discount-setup app → API credentials → Admin API access token
+ * Replace ADMIN_TOKEN below with a token from:
+ * Shopify Admin → Settings → Apps → Develop apps → Create a private app
+ * Scopes needed: write_discounts
  */
 
-const SHOP = 'hpnsupplements.myshopify.com';
-const API_VERSION = '2026-01';
-const TOKEN = process.argv[2];
+const SHOP = 'hpn-supplements.myshopify.com';
+const ADMIN_TOKEN = 'REPLACE_WITH_YOUR_TOKEN'; // ← put your token here
 
-if (!TOKEN) {
-  console.error('Usage: node create-discount.mjs <ADMIN_API_ACCESS_TOKEN>');
-  process.exit(1);
-}
+// The function GID is: gid://shopify/ShopifyFunction/<uid>
+// uid from shopify.extension.toml = 019cd7f8-8383-7d8f-bc29-490ef3798fe9
+// But we need to query it first to get the real GID
 
-// Step 1: Find the functionId of the installed hpn-bundle-discount function
-const findFunctionQuery = `
+const query = `
   query {
     shopifyFunctions(first: 10) {
       nodes {
         id
         title
         apiType
-        app {
-          title
-        }
+        app { title }
       }
     }
   }
 `;
 
-async function graphql(query, variables = {}) {
-  const res = await fetch(`https://${SHOP}/admin/api/${API_VERSION}/graphql.json`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': TOKEN,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
-  const json = await res.json();
-  if (json.errors) throw new Error(JSON.stringify(json.errors, null, 2));
-  return json.data;
+const res = await fetch(`https://${SHOP}/admin/api/2025-01/graphql.json`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Shopify-Access-Token': ADMIN_TOKEN,
+  },
+  body: JSON.stringify({ query }),
+});
+
+const data = await res.json();
+
+if (data.errors) {
+  process.exit(1);
 }
 
-// Step 2: Create the automatic discount
-const createDiscountMutation = `
-  mutation discountAutomaticAppCreate($automaticAppDiscount: DiscountAutomaticAppInput!) {
-    discountAutomaticAppCreate(automaticAppDiscount: $automaticAppDiscount) {
+const functions = data.data?.shopifyFunctions?.nodes ?? [];
+
+
+// Find our function
+const bundleFn = functions.find(f =>
+  f.title?.toLowerCase().includes('bundle') ||
+  f.app?.title?.toLowerCase().includes('bundle')
+);
+
+if (!bundleFn) {
+  process.exit(0);
+}
+
+// Create the automatic discount
+const createMutation = `
+  mutation {
+    discountAutomaticAppCreate(automaticAppDiscount: {
+      title: "Bundle Builder Discount"
+      functionId: "${bundleFn.id}"
+      startsAt: "2024-01-01T00:00:00Z"
+      combinesWith: {
+        productDiscounts: false
+        orderDiscounts: false
+        shippingDiscounts: true
+      }
+    }) {
       automaticAppDiscount {
         discountId
         title
@@ -65,55 +81,22 @@ const createDiscountMutation = `
   }
 `;
 
-async function main() {
-  console.log('🔍 Finding HPN Bundle Discount function...');
-  
-  const functionsData = await graphql(findFunctionQuery);
-  const functions = functionsData.shopifyFunctions.nodes;
-  
-  console.log('Available functions:');
-  functions.forEach(f => console.log(`  - ${f.title} (${f.app?.title}) → ${f.id}`));
+const createRes = await fetch(`https://${SHOP}/admin/api/2025-01/graphql.json`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Shopify-Access-Token': ADMIN_TOKEN,
+  },
+  body: JSON.stringify({ query: createMutation }),
+});
 
-  const bundleFunction = functions.find(
-    f => f.title?.toLowerCase().includes('bundle') || f.app?.title?.toLowerCase().includes('bundle')
-  );
+const createData = await createRes.json();
 
-  if (!bundleFunction) {
-    console.error('❌ HPN Bundle Discount function not found. Make sure hpn-bundle-builder-discount app is installed.');
-    process.exit(1);
-  }
-
-  console.log(`\n✅ Found: ${bundleFunction.title} → ${bundleFunction.id}`);
-  console.log('\n🚀 Creating automatic discount...');
-
-  const result = await graphql(createDiscountMutation, {
-    automaticAppDiscount: {
-      title: 'Bundle Builder Discount',
-      functionId: bundleFunction.id,
-      startsAt: new Date().toISOString(),
-      combinesWith: {
-        orderDiscounts: false,
-        productDiscounts: false,
-        shippingDiscounts: false,
-      },
-    },
-  });
-
-  const { automaticAppDiscount, userErrors } = result.discountAutomaticAppCreate;
-
-  if (userErrors.length > 0) {
-    console.error('❌ Errors:', JSON.stringify(userErrors, null, 2));
-    process.exit(1);
-  }
-
-  console.log('\n🎉 Discount created successfully!');
-  console.log(`   ID:     ${automaticAppDiscount.discountId}`);
-  console.log(`   Title:  ${automaticAppDiscount.title}`);
-  console.log(`   Status: ${automaticAppDiscount.status}`);
-  console.log('\n✅ The Bundle Builder discount is now ACTIVE on hpnsupplements.myshopify.com');
+if (createData.errors) {
+  process.exit(1);
 }
 
-main().catch(err => {
-  console.error('❌ Error:', err.message);
+const result = createData.data?.discountAutomaticAppCreate;
+if (result?.userErrors?.length) {
   process.exit(1);
-});
+}

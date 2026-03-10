@@ -1,32 +1,13 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Input query for the Bundle Discount Function
-#
-# We request:
-#   • cart.lines.id              — needed to target specific cart lines
-#   • cart.lines.attributes      — where _bundle_item and _bundle_discount_pct live
-#   • discount.discountClasses   — so we only run when discount class is PRODUCT
-#
-# cart.lines.attributes maps to Shopify's line_item.properties.
-# The bundle-builder-page.js sets:
-#   { key: "_bundle_item",         value: "true"  }
-#   { key: "_bundle_discount_pct", value: "20"    }  (or 25 / 30)
-#   { key: "_bundle_id",           value: "bb-…"  }
-# ─────────────────────────────────────────────────────────────────────────────
-
 query Input {
   cart {
     lines {
       id
       quantity
-      attribute {
-        key
+      bundleItem: attribute(key: "_bundle_item") {
         value
       }
-      cost {
-        subtotalAmount {
-          amount
-          currencyCode
-        }
+      bundleId: attribute(key: "_bundle_id") {
+        value
       }
     }
   }

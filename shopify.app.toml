@@ -1,22 +1,22 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# HPN Bundle Discount — Extensions-only app (embedded)
+# Managed via Shopify Dev Dashboard (developers.shopify.com)
 
 client_id = "c77962b9da62ce623c46b24b8c97f2b1"
 name = "hpn-bundle-builder-discount"
-application_url = "https://hpn-bundle-discount.onrender.com"
-embedded = false
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
-
-[webhooks]
-api_version = "2026-04"
+automatically_update_urls_on_dev = false
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "write_discounts,read_discounts"
 
 [auth]
-redirect_urls = [ "https://hpn-bundle-discount.onrender.com/auth/callback" ]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/auth/callback" ]
+
+[webhooks]
+api_version = "2026-04"
 
 [pos]
 embedded = false

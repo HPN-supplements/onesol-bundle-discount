@@ -1,16 +1,12 @@
 {
   "name": "hpn-bundle-discount",
   "version": "1.0.0",
-  "description": "Shopify App that hosts the Bundle Builder Discount Function for HPN Supplements.",
   "private": true,
   "scripts": {
     "dev": "shopify app dev",
     "build": "shopify app build",
     "deploy": "shopify app deploy",
     "info": "shopify app info"
-  },
-  "dependencies": {
-    "@shopify/shopify-app-remix": "^3.0.0"
   },
   "devDependencies": {
     "@shopify/app": "^3.0.0"
