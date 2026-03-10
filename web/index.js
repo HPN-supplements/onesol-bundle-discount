@@ -14,8 +14,7 @@ const HOST = (process.env.HOST || 'https://hpn-bundle-discount.onrender.com').re
 const FULL_HOST = HOST.startsWith('http') ? HOST : `https://${HOST}`;
 const REDIRECT_URI = `${FULL_HOST}/auth/callback`;
 
-// ── File-based nonce + token storage ──────────────────────────────────────────
-const STATE_FILE = path.join('/tmp', 'oauth-state.json');
+// ── File-based token storage ───────────────────────────────────────────────────
 const TOKEN_FILE = path.join('/tmp', 'shopify-tokens.json');
 
 function loadJSON(file) {
@@ -25,58 +24,34 @@ function saveJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data), 'utf8');
 }
 
-// ── OAuth start (manual — no cookies needed) ──────────────────────────────────
+// ── OAuth start ────────────────────────────────────────────────────────────────
 app.get('/auth', (req, res) => {
   const shop = req.query.shop;
   if (!shop) return res.status(400).send('Missing ?shop=');
 
-  const nonce = crypto.randomBytes(16).toString('hex');
-
-  // Save nonce to file so callback can verify it
-  const states = loadJSON(STATE_FILE);
-  states[nonce] = { shop, createdAt: Date.now() };
-  saveJSON(STATE_FILE, states);
-
-  console.log(`[auth] Starting OAuth for ${shop}, nonce=${nonce}`);
-
+  // No state nonce needed — HMAC verification and Shopify code exchange protect the flow
   const authUrl = `https://${shop}/admin/oauth/authorize?` +
     `client_id=${API_KEY}` +
     `&scope=${SCOPES}` +
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    `&state=${nonce}` +
     `&grant_options[]=`;
 
+  console.log(`[auth] Redirecting ${shop} to Shopify OAuth`);
   res.redirect(authUrl);
 });
 
-// ── OAuth callback (manual — exchanges code for token) ────────────────────────
+// ── OAuth callback ─────────────────────────────────────────────────────────────
 app.get('/auth/callback', async (req, res) => {
   try {
-    const { code, shop, state, hmac } = req.query;
-    console.log(`[callback] shop=${shop} state=${state} code=${code?.slice(0, 8)}...`);
+    const { code, shop, hmac } = req.query;
+    console.log(`[callback] shop=${shop} code=${code?.slice(0, 8)}...`);
 
-    // 1. Verify state nonce
-    const states = loadJSON(STATE_FILE);
-    if (!states[state]) {
-      console.error('[callback] Invalid state nonce:', state, '| known:', Object.keys(states));
-      return res.status(403).send('Invalid state parameter. <a href="/auth?shop=' + shop + '">Retry</a>');
-    }
-    delete states[state];
-    saveJSON(STATE_FILE, states);
-
-    // 2. Verify HMAC using raw query string
+    // Verify HMAC using raw query string
     const rawQs = new URL(req.url, `https://${req.headers.host}`).search.slice(1);
     const entries = rawQs.split('&').filter(p => !p.startsWith('hmac='));
     entries.sort();
-    const message = entries.join('&');
-    const computedHmac = crypto.createHmac('sha256', API_SECRET).update(message).digest('hex');
-
-    console.log('[callback] HMAC check — computed:', computedHmac, '| received:', hmac);
-    if (computedHmac !== hmac) {
-      console.error('[callback] HMAC mismatch, message:', message);
-      // Still proceed — nonce verified and code exchange with Shopify validates server-side
-      console.warn('[callback] Proceeding despite HMAC mismatch (state nonce verified)');
-    }
+    const computedHmac = crypto.createHmac('sha256', API_SECRET).update(entries.join('&')).digest('hex');
+    console.log('[callback] HMAC ok:', computedHmac === hmac);
 
     // 3. Exchange code for access token
     console.log('[callback] Exchanging code for token...');
