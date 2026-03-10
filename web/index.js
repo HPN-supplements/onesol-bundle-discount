@@ -65,27 +65,40 @@ const shopify = shopifyApi({
 
 // ── OAuth start ───────────────────────────────────────────────────────────────
 app.get('/auth', async (req, res) => {
-  await shopify.auth.begin({
-    shop: shopify.utils.sanitizeShop(req.query.shop, true),
-    callbackPath: '/auth/callback',
-    isOnline: false,
-    rawRequest: req,
-    rawResponse: res,
-  });
+  try {
+    console.log('[auth] Starting OAuth for shop:', req.query.shop);
+    await shopify.auth.begin({
+      shop: shopify.utils.sanitizeShop(req.query.shop, true),
+      callbackPath: '/auth/callback',
+      isOnline: false,
+      rawRequest: req,
+      rawResponse: res,
+    });
+  } catch (err) {
+    console.error('[auth] Error:', err);
+    res.status(500).send('OAuth start error: ' + err.message);
+  }
 });
 
 // ── OAuth callback — installs app and creates discount ────────────────────────
 app.get('/auth/callback', async (req, res) => {
-  const callback = await shopify.auth.callback({
-    rawRequest: req,
-    rawResponse: res,
-  });
+  try {
+    console.log('[callback] Received callback, query:', JSON.stringify(req.query));
+    const callback = await shopify.auth.callback({
+      rawRequest: req,
+      rawResponse: res,
+    });
 
-  const session = callback.session;
-  await createBundleDiscount(session);
+    const session = callback.session;
+    console.log('[callback] OAuth complete for:', session.shop);
+    await createBundleDiscount(session);
 
-  // Redirect to discount list in admin
-  res.redirect(`https://${session.shop}/admin/discounts`);
+    // Redirect to discount list in admin
+    res.redirect(`https://${session.shop}/admin/discounts`);
+  } catch (err) {
+    console.error('[callback] Error:', err);
+    res.status(500).send('OAuth callback error: ' + err.message);
+  }
 });
 
 // ── App home — redirect to OAuth if shop param present ───────────────────────
