@@ -2,8 +2,8 @@
 # Managed via Shopify Dev Dashboard (developers.shopify.com)
 
 
-client_id = "c77962b9da62ce623c46b24b8c97f2b1"
-name = "onesol-bundle-builder-discount"
+client_id = "7c4b3a3e21cbf6eb40a93e504827edc0"
+name = "bundle-builder-discount"
 application_url = "https://shopify.dev/apps/default-app-home"
 embedded = true
 
