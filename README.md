@@ -1,69 +1,69 @@
-# HPN Bundle Discount — Shopify Discount Function
+# onesol Bundle Discount — Shopify Discount Function
 
-> **Una sola vez**: esta app va en la carpeta `hpn-bundle-discount/` separada del theme.  
-> No toca el theme. Solo vive en Shopify como una app instalada en la tienda.
-
----
-
-## Qué hace
-
-Al llegar al checkout, Shopify ejecuta esta función para cada carrito. La función:
-
-1. Lee los **line_item attributes** de cada producto en el carrito.
-2. Busca los que tienen `_bundle_item = "true"` (seteado por `bundle-builder-page.js`).
-3. Lee el `_bundle_discount_pct` de cada línea (20, 25, o 30).
-4. Aplica ese porcentaje **solo a esas líneas** — el resto del carrito queda intacto.
+> **One-time note**: this app goes in the `onesol-bundle-discount/` folder, separate from the theme.  
+> It doesn't touch the theme. It only lives on Shopify as an installed app in the store.
 
 ---
 
-## Requisitos previos
+## What it does
+
+When the shopper reaches checkout, Shopify runs this function for each cart. The function:
+
+1. Reads the **line_item attributes** of each product in the cart.
+2. Finds those that have `_bundle_item = "true"` (set by `bundle-builder-page.js`).
+3. Reads the `_bundle_discount_pct` for each line (20, 25, or 30).
+4. Applies that percentage **only to those lines** — the rest of the cart remains unchanged.
+
+---
+
+## Prerequisites
 
 - Node.js 22+
 - Shopify CLI v3+ → `npm install -g @shopify/cli`
-- Una cuenta en [Shopify Partners](https://partners.shopify.com)
-- La tienda `hpn-supplements.myshopify.com` conectada a tu Partner account
+- A [Shopify Partners](https://partners.shopify.com) account
+- The store `onesol-supplements.myshopify.com` connected to your Partner account
 
 ---
 
-## Setup paso a paso
+## Step-by-step setup
 
-### 1. Loguéate con Shopify CLI
+### 1. Log in with Shopify CLI
 
 ```bash
-cd hpn-bundle-discount
-shopify auth login --store hpn-supplements.myshopify.com
+cd onesol-bundle-discount
+shopify auth login --store onesol-supplements.myshopify.com
 ```
 
-### 2. Conecta o crea la app en tu Partner account
+### 2. Connect or create the app in your Partner account
 
 ```bash
 shopify app dev
 ```
 
-La primera vez te preguntará si querés **crear una nueva app** o **conectar una existente**.  
-→ Elegí **crear nueva app** y nómbrala "HPN Bundle Discount".  
-El CLI completará `client_id` y `application_url` en `shopify.app.toml` automáticamente.
+The first time it will ask whether you want to **create a new app** or **connect an existing one**.  
+→ Choose **create new app** and name it "onesol Bundle Discount".  
+The CLI will fill in `client_id` and `application_url` in `shopify.app.toml` automatically.
 
-### 3. Instala la app en la tienda (development)
+### 3. Install the app in the store (development)
 
-Mientras `shopify app dev` corre, el CLI te da una URL como:
+While `shopify app dev` is running, the CLI gives you a URL like:
 ```
 https://xyz.trycloudflare.com
 ```
-Abrila en el browser → instalá la app en `hpn-supplements.myshopify.com`.
+Open it in the browser → install the app in `onesol.myshopify.com`.
 
-### 4. Crea el Automatic Discount en Shopify Admin
+### 4. Create the Automatic Discount in Shopify Admin
 
-Con `shopify app dev` corriendo, presioná **`g`** en la terminal para abrir GraphiQL.
+With `shopify app dev` running, press **`g`** in the terminal to open GraphiQL.
 
-Ejecutá esta mutación (reemplazá `YOUR_STORE` con `hpn-supplements.myshopify.com`):
+Run this mutation (replace `YOUR_STORE` with `onesol.myshopify.com`):
 
 ```graphql
 mutation {
   discountAutomaticAppCreate(
     automaticAppDiscount: {
       title: "Bundle Builder Discount"
-      functionHandle: "hpn-bundle-discount"
+      functionHandle: "onesol-bundle-discount"
       discountClasses: [PRODUCT]
       startsAt: "2026-01-01T00:00:00"
       combinesWith: {
@@ -84,88 +84,88 @@ mutation {
 }
 ```
 
-Si `userErrors` está vacío, el discount quedó activo. ✅
+If `userErrors` is empty, the discount is active. ✅
 
-### 5. Verificá en Shopify Admin
+### 5. Verify in Shopify Admin
 
-Ve a **Discounts** → deberías ver **"Bundle Builder Discount"** activo con tipo **Automatic**.
+Go to **Discounts** → you should see **"Bundle Builder Discount"** active with type **Automatic**.
 
-### 6. Deploy a producción
+### 6. Deploy to production
 
-Cuando estés listo para producción:
+When you're ready for production:
 
 ```bash
 shopify app deploy
 ```
 
-Esto publica la función a Shopify y reemplaza el draft de dev.
+This publishes the function to Shopify and replaces the development draft.
 
 ---
 
-## Estructura de archivos
+## File structure
 
 ```
-hpn-bundle-discount/
-├── shopify.app.toml                          ← Config de la Shopify App
+onesol-bundle-discount/
+├── shopify.app.toml                          ← Shopify App configuration
 ├── package.json
 └── extensions/
     └── bundle-discount-function/
-        ├── shopify.extension.toml            ← Config de la Function extension
+        ├── shopify.extension.toml            ← Function extension configuration
         └── src/
-            ├── run.graphql                   ← Input query (qué datos pide la función)
-            └── run.js                        ← Lógica de la función (JavaScript)
+            ├── run.graphql                   ← Input query (what data the function requests)
+            └── run.js                        ← Function logic (JavaScript)
 ```
 
 ---
 
-## Cómo funciona el descuento con el theme
+## How the discount works with the theme
 
 ```
 bundle-builder-page.js (theme)
-  └── /cart/add.js con properties:
+  └── /cart/add.js with properties:
         _bundle_item         = "true"
         _bundle_id           = "bb-1234-abc"
-        _bundle_discount_pct = "20"          ← según el tier activo
+        _bundle_discount_pct = "20"          ← according to the active tier
 
-  → Cliente va a checkout
+  → Customer goes to checkout
 
-Shopify ejecuta run.js (esta función)
-  └── Lee attributes de cada cart line
-  └── Filtra los que tienen _bundle_item = "true"
-  └── Lee _bundle_discount_pct = "20"
-  └── Aplica 20% SOLO a esas líneas
-  └── El resto del carrito → sin descuento ✅
+Shopify runs run.js (this function)
+  └── Reads attributes of each cart line
+  └── Filters those with _bundle_item = "true"
+  └── Reads _bundle_discount_pct = "20"
+  └── Applies 20% ONLY to those lines
+  └── The rest of the cart → no discount ✅
 ```
 
 ---
 
-## Tier de descuentos (configurado en el theme)
+## Discount tiers (configured in the theme)
 
-| Productos bundle en carrito | Descuento aplicado |
+| Bundle products in cart | Discount applied |
 |---|---|
 | 2 | 20% |
 | 3 | 25% |
 | 4 | 30% |
 
-Estos porcentajes se setean en `bundle-builder-page.js` → `getCurrentTier()` y se pasan como `_bundle_discount_pct` en el momento del add to cart.
+These percentages are set in `bundle-builder-page.js` → `getCurrentTier()` and are passed as `_bundle_discount_pct` at the moment of add-to-cart.
 
 ---
 
 ## Testing
 
 ```bash
-# Correr la función localmente con un JSON de input de prueba
+# Run the function locally with a test JSON input
 shopify app function run --input='{"cart":{"lines":[{"id":"gid://shopify/CartLine/1","quantity":1,"attributes":[{"key":"_bundle_item","value":"true"},{"key":"_bundle_discount_pct","value":"20"}],"cost":{"subtotalAmount":{"amount":"49.99","currencyCode":"USD"}}}]},"discount":{"discountClasses":["PRODUCT"]}}'
 ```
 
 ---
 
-## Replay de ejecuciones reales
+## Replaying real executions
 
-Mientras `shopify app dev` corre, cada checkout que use la función aparece en la terminal. Para replicar una ejecución localmente:
+While `shopify app dev` is running, every checkout that uses the function appears in the terminal. To replay an execution locally:
 
 ```bash
 shopify app function replay
 ```
 
-Seleccioná la ejecución de la lista → te muestra el input/output completo.
+Select the execution from the list → it shows the full input/output.

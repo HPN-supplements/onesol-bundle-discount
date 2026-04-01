@@ -7,7 +7,7 @@
  * Scopes needed: write_discounts
  */
 
-const SHOP = 'hpn-supplements.myshopify.com';
+const SHOP = 'onesol.myshopify.com';
 const ADMIN_TOKEN = 'REPLACE_WITH_YOUR_TOKEN'; // ← put your token here
 
 // The function GID is: gid://shopify/ShopifyFunction/<uid>

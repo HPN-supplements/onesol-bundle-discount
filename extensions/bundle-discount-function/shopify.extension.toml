@@ -1,8 +1,8 @@
 api_version = "2026-01"
 
 [[extensions]]
-name        = "HPN Bundle Discount Function"
-handle      = "hpn-bundle-discount"
+name        = "onesol Bundle Discount Function"
+handle      = "onesol-bundle-discount"
 
 uid = "019cd7f8-8383-7d8f-bc29-490ef3798fe9"
 

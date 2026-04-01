@@ -57,8 +57,8 @@ export function run(input) {
 }
 
 function resolveTier(totalQty) {
-  if (totalQty >= 4) return 30;
-  if (totalQty >= 3) return 25;
-  if (totalQty >= 2) return 20;
+  if (totalQty >= 4) return 25;
+  if (totalQty >= 3) return 20;
+  if (totalQty >= 2) return 15;
   return 0;
 }
