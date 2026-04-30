@@ -17,4 +17,4 @@ api_version = "2026-04"
 scopes = "read_discounts,write_discounts"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth", "http://localhost:3456/callback" ]
