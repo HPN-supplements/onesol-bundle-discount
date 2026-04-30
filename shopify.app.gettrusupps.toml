@@ -1,0 +1,22 @@
+client_id = "8d79d2769a9d4e38f1dac60f2717c57b"
+name = "bundle-builder-discount"
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[access_scopes]
+scopes = "write_discounts,read_discounts"
+
+[auth]
+redirect_urls = [
+  "https://shopify.dev/apps/default-app-home/auth/callback",
+  "http://localhost:3456/callback"
+]
+
+[webhooks]
+api_version = "2026-04"
+
+[pos]
+embedded = false

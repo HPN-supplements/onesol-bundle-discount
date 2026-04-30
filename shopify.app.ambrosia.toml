@@ -1,0 +1,23 @@
+# ambrosia-nutraceuticals Bundle Discount — Extensions-only app (embedded)
+# Managed via Shopify Dev Dashboard (developers.shopify.com)
+
+
+client_id = "aa390ea6cae089d79abd5914e6aef8e7"
+name = "bundle-builder-discount"
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[access_scopes]
+scopes = "write_discounts,read_discounts"
+
+[auth]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/auth/callback", "http://localhost:3456/callback" ]
+
+[webhooks]
+api_version = "2026-04"
+
+[pos]
+embedded = false
