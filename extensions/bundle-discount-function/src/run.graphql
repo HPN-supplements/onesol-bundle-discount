@@ -3,6 +3,11 @@ query Input {
     lines {
       id
       quantity
+      cost {
+        subtotalAmount {
+          amount
+        }
+      }
       bundleItem: attribute(key: "_bundle_item") {
         value
       }
