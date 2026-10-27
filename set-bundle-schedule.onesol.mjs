@@ -18,7 +18,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 const CLIENT_ID      = '7c4b3a3e21cbf6eb40a93e504827edc0';
-const CLIENT_SECRET  = process.env.SHOPIFY_CLIENT_SECRET;
+const CLIENT_SECRET  = process.env.SHOPIFY_CLIENT_SECRET_ONESOL || process.env.SHOPIFY_CLIENT_SECRET;
 const SHOP           = 'onesolsupps.myshopify.com';
 const SCOPES         = 'write_discounts,read_discounts';
 const REDIRECT_URI   = 'http://localhost:3456/callback';
