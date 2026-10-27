@@ -3,3 +3,8 @@ node_modules/
 dist/
 *.wasm
 .build-lock
+# Local AI agent tooling (do not commit)
+.codegraph/
+graphify-out/
+AGENTS.md
+CLAUDE.md

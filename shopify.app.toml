@@ -14,7 +14,7 @@ automatically_update_urls_on_dev = false
 scopes = "write_discounts,read_discounts"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/auth/callback" ]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/auth/callback", "http://localhost:3456/callback" ]
 
 [webhooks]
 api_version = "2026-04"

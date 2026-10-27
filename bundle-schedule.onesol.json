@@ -1,0 +1,24 @@
+{
+  "defaultTiers": { "2": 15, "3": 20, "4": 25 },
+  "schedule": [
+    {
+      "start": "2026-10-28",
+      "end": "2026-11-01",
+      "tiers": { "1": 15, "2": 20, "3": 25, "4": 30 },
+      "banner": {
+        "desktop": "bb-halloween-2026-desktop.jpg",
+        "mobile": "bb-halloween-2026-mobile.jpg",
+        "eyebrow": "HALLOWEEN SALE",
+        "title": "Bundle & Save Up To 30%"
+      }
+    },
+    {
+      "start": "2026-11-02",
+      "end": null,
+      "tiers": { "1": 15, "2": 20, "3": 25, "4": 30 },
+      "banner": {
+        "title": "Bundle & Save Up To 30%"
+      }
+    }
+  ]
+}

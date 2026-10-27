@@ -18,5 +18,13 @@ query Input {
   }
   discount {
     discountClasses
+    config: metafield(namespace: "$app:bundle", key: "config") {
+      jsonValue
+    }
+  }
+  shop {
+    localTime {
+      date
+    }
   }
 }

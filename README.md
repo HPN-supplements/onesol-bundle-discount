@@ -11,8 +11,14 @@ When the shopper reaches checkout, Shopify runs this function for each cart. The
 
 1. Reads the **line_item attributes** of each product in the cart.
 2. Finds those that have `_bundle_item = "true"` (set by `bundle-builder-page.js`).
-3. Reads the `_bundle_discount_pct` for each line (20, 25, or 30).
-4. Applies that percentage **only to those lines** — the rest of the cart remains unchanged.
+3. Computes the tier from the group's total quantity itself — `resolveTier()` in
+   `extensions/bundle-discount-function/src/run.js`: 2 → 15%, 3 → 20%, 4+ → 25%.
+   (No `_bundle_discount_pct` line property is read — the theme never sets one;
+   an earlier version of this doc described a property-driven design that was
+   never actually implemented.)
+4. Applies that percentage to the whole bundle group's subtotal as one combined
+   discount (correct rounding, instead of rounding each line independently) —
+   the rest of the cart remains unchanged.
 
 ---
 
@@ -21,82 +27,56 @@ When the shopper reaches checkout, Shopify runs this function for each cart. The
 - Node.js 22+
 - Shopify CLI v3+ → `npm install -g @shopify/cli`
 - A [Shopify Partners](https://partners.shopify.com) account
-- The store `onesol-supplements.myshopify.com` connected to your Partner account
+- The real store domain connected to your Partner account — **not** a guess at
+  the name. Confirm with `shopify theme list --store <domain>` from the
+  theme's own repo if unsure; for onesol this is `onesolsupps.myshopify.com`
+  (not `onesol.myshopify.com` or `onesol-supplements.myshopify.com`, both of
+  which appeared in earlier drafts of this doc and don't exist).
 
 ---
 
-## Step-by-step setup
+## Step-by-step setup (per store)
 
-### 1. Log in with Shopify CLI
+The Function itself (`extensions/bundle-discount-function`) has no store-specific
+logic — the same deployed app (`shopify.app.<name>.toml`, one config per store)
+just needs to be (a) built/deployed once, then (b) installed + activated on
+each store separately. Steps (a)/(b) are already done for `ambrosia` and
+`gettrusupps` — see their `oauth-create-discount.<store>.mjs` scripts, which
+is the pattern to follow for any new store:
 
-```bash
-cd onesol-bundle-discount
-shopify auth login --store onesol-supplements.myshopify.com
-```
-
-### 2. Connect or create the app in your Partner account
-
-```bash
-shopify app dev
-```
-
-The first time it will ask whether you want to **create a new app** or **connect an existing one**.  
-→ Choose **create new app** and name it "onesol Bundle Discount".  
-The CLI will fill in `client_id` and `application_url` in `shopify.app.toml` automatically.
-
-### 3. Install the app in the store (development)
-
-While `shopify app dev` is running, the CLI gives you a URL like:
-```
-https://xyz.trycloudflare.com
-```
-Open it in the browser → install the app in `onesol.myshopify.com`.
-
-### 4. Create the Automatic Discount in Shopify Admin
-
-With `shopify app dev` running, press **`g`** in the terminal to open GraphiQL.
-
-Run this mutation (replace `YOUR_STORE` with `onesol.myshopify.com`):
-
-```graphql
-mutation {
-  discountAutomaticAppCreate(
-    automaticAppDiscount: {
-      title: "Bundle Builder Discount"
-      functionHandle: "onesol-bundle-discount"
-      discountClasses: [PRODUCT]
-      startsAt: "2026-01-01T00:00:00"
-      combinesWith: {
-        orderDiscounts: true
-        productDiscounts: false
-        shippingDiscounts: true
-      }
-    }
-  ) {
-    automaticAppDiscount {
-      discountId
-    }
-    userErrors {
-      field
-      message
-    }
-  }
-}
-```
-
-If `userErrors` is empty, the discount is active. ✅
-
-### 5. Verify in Shopify Admin
-
-Go to **Discounts** → you should see **"Bundle Builder Discount"** active with type **Automatic**.
-
-### 6. Deploy to production
-
-When you're ready for production:
+### 1. Deploy the Function
 
 ```bash
-shopify app deploy
+shopify app deploy --config <store-config-name> --allow-updates
 ```
+
+(`<store-config-name>` matches the `shopify.app.<store-config-name>.toml`
+file — e.g. `onesol-bundle-builder-discount`.) This publishes the Function to
+the app on Shopify's side; it does not touch any store's live discounts yet.
+
+### 2. Get the app's client secret
+
+Partners → Apps → (this app) → Client credentials. Set it locally:
+
+```bash
+$env:SHOPIFY_CLIENT_SECRET="shpss_..."
+```
+
+### 3. Run the OAuth activation script for that store
+
+```bash
+node oauth-create-discount.<store>.mjs
+```
+
+It prints an authorize URL — open it in a browser **while logged into that
+store's own Shopify admin**, click install/authorize. The script then creates
+the live `discountAutomaticAppCreate` discount automatically and exits. This
+step needs a real interactive login; it can't be scripted/automated further.
+
+### 4. Verify in Shopify Admin
+
+Go to **Discounts** → you should see **"Bundle Builder Discount"** active with
+type **Automatic**, on that store specifically.
 
 This publishes the function to Shopify and replaces the development draft.
 
@@ -148,6 +128,29 @@ Shopify runs run.js (this function)
 | 4 | 30% |
 
 These percentages are set in `bundle-builder-page.js` → `getCurrentTier()` and are passed as `_bundle_discount_pct` at the moment of add-to-cart.
+
+---
+
+## Tier schedule (onesol)
+
+Tiers are data, not code. The function reads a JSON config from the discount's metafield `$app:bundle/config` and the store-local date (`shop.localTime.date`). With no metafield (or invalid JSON) it uses the defaults 2 → 15%, 3 → 20%, 4+ → 25%, so other stores are unaffected.
+
+- Shape: see `bundle-schedule.onesol.json`. Tier key = minimum quantity (highest key ≤ qty wins). Dates are `YYYY-MM-DD` in the store timezone, `end` is exclusive, `end: null` = open-ended. First matching window wins; outside any window `defaultTiers` applies.
+Expected behavior per period (store timezone America/Los_Angeles):
+
+| Period | Hero images | Hero title | Tiers |
+|---|---|---|---|
+| before 10-28 | current | merchant title (25%) | default: 2=15, 3=20, 4+=25 (no 1-item bundles) |
+| 10-28 to 10-31 | Halloween | "Bundle & Save Up To 30%" | promo: 1=15, 2=20, 3=25, 4+=30 |
+| 11-01 | current | merchant title (25%) | default |
+| from 11-02 (no end) | current | "Bundle & Save Up To 30%" | promo |
+
+> Keep `bundle-schedule.onesol.json` (function metafield, set with `set-bundle-schedule.onesol.mjs`) and the theme file `snippets/bundle-tier-schedule.liquid` (default source on the theme side) in sync: dates and tiers must match exactly; paste the same JSON into both. The theme section setting `bundle_schedule` (Bundle Builder - Cart) is empty by default and, if filled, overrides the snippet (use `{"schedule":[]}` to disable). The `banner` keys (images, title, eyebrow) are only read by the theme; the function ignores unknown keys (covered by a test). The theme ignores `defaultTiers` (its Bundle Tier blocks are the default), so keep those equal to the function defaults.
+
+- Deploy the function once (it reads new input fields): `shopify app deploy`.
+- Set/update the schedule (no redeploy needed): `$env:SHOPIFY_CLIENT_SECRET="shpss_..."`, then `node set-bundle-schedule.onesol.mjs --dry-run` (prints shop timezone + current config), then the same without `--dry-run`.
+- Tests: `npm test --prefix extensions/bundle-discount-function`.
+- The theme must show the same tiers (`snippets/bundle-tier-schedule.liquid`, optionally overridden by the `bundle_schedule` section setting).
 
 ---
 

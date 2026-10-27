@@ -5,6 +5,7 @@
   "scripts": {
     "shopify": "npm exec -- shopify",
     "build": "npm exec -- shopify app function build",
+    "test": "node --test tests/run.test.mjs",
     "preview": "npm exec -- shopify app function run"
   },
   "codegen": {
