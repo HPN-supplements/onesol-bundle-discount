@@ -98,31 +98,31 @@ async function gql(token, query, variables) {
 
 async function apply(token) {
   const found = await gql(token, `
-    query($namespace: String!, $key: String!) {
+    query($namespace: String!, $key: String!, $search: String!) {
       shop { ianaTimezone }
-      automaticDiscountNodes(first: 50) {
+      discountNodes(first: 50, query: $search) {
         nodes {
           id
           metafield(namespace: $namespace, key: $key) { jsonValue }
-          automaticDiscount {
+          discount {
             __typename
             ... on DiscountAutomaticApp { title status }
           }
         }
       }
     }
-  `, METAFIELD);
+  `, { ...METAFIELD, search: `title:*Bundle*` });
 
   console.log('Shop timezone (ianaTimezone):', found.shop.ianaTimezone);
 
-  const matches = found.automaticDiscountNodes.nodes.filter(
-    (n) => n.automaticDiscount?.__typename === 'DiscountAutomaticApp' && n.automaticDiscount.title === DISCOUNT_TITLE,
+  const matches = found.discountNodes.nodes.filter(
+    (n) => n.discount?.__typename === 'DiscountAutomaticApp' && n.discount.title === DISCOUNT_TITLE,
   );
   if (matches.length !== 1) {
     throw new Error(`Expected exactly 1 app discount titled "${DISCOUNT_TITLE}", found ${matches.length}.`);
   }
   const node = matches[0];
-  console.log(`Discount: ${node.id} (${node.automaticDiscount.status})`);
+  console.log(`Discount: ${node.id} (${node.discount.status})`);
   console.log('Current config:', JSON.stringify(node.metafield?.jsonValue ?? null, null, 2));
   console.log('New config:    ', JSON.stringify(config, null, 2));
 
